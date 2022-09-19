@@ -16,23 +16,26 @@
 
 """ Implement various GANs on MNIST with TF2.0 """
 
+from concurrent.futures.thread import _worker
 import os
 import sys
+from syslog import LOG_WARNING
 
 from absl import app, flags, logging
 import tensorflow as tf
 
-from utils import _MODELS, get_model
+from models.utils import _MODELS, get_model
 from models import GAN
+from datasets import get_mnist
 
 FLAGS = flags.FLAGS
 FLAGS.alsologtostderr = True
 
 flags.DEFINE_enum(
     name='model',
-    default='GAN_H',
+    default='gan_h',
     enum_values=list(_MODELS.keys()),
-    help='select models to use (default: GAN_H).')
+    help='select models to use (default: gan_h).')
 
 flags.DEFINE_enum(
     name='mode',
@@ -40,26 +43,55 @@ flags.DEFINE_enum(
     enum_values=['train', 'eval'],
     help='computation mode (Default: train).')
 
+flags.DEFINE_integer(
+    name='batch_size',
+    default=64,
+    lower_bound=4,
+    help='Batch size to use (default: 64).'
+)
+
+flags.DEFINE_enum(
+    name='verb',
+    default='debug',
+    enum_values=['debug', 'info', 'warn', 'error', 'fatal'],
+    help='Level of logging verbosity (default: debug).'
+)
+
 
 def main(argv):
+    # argv passed by absl.
     del argv
 
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
     os.environ['NO_GCE_CHECK'] = 'true'
     tf.config.experimental.set_visible_devices([], 'GPU')
 
-    tf.io.gfile.makedirs('exps/' + FLAGS.model)
+    workdir = os.path.join('exps', FLAGS.model)
 
-    with tf.io.gfile.GFile('exps/' + FLAGS.model + '/logs', 'w') as gf:
+    tf.io.gfile.makedirs(workdir)
+
+    if FLAGS.verb == 'info':
+        logging.set_verbosity(logging.INFO)
+    elif FLAGS.verb == 'warn':
+        logging.set_verbosity(logging.WARNING)
+    elif FLAGS.verb == 'error':
+        logging.set_verbosity(logging.ERROR)
+    elif FLAGS.verb == 'fatal':
+        logging.set_verbosity(logging.FATAL)
+    else:
+        logging.set_verbosity(logging.DEBUG)
+
+    with tf.io.gfile.GFile(workdir + '/logs', 'w') as gf:
         absl_handler = logging.get_absl_handler()
         absl_handler.python_handler.stream = gf
         logging.info(' '.join(sys.argv))
 
     # Data
+    (ds_train, ds_test) = get_mnist()
 
     # Model Compilation
     model = get_model(FLAGS.model)
-    print(model)
+    logging.debug(f'{model}')
 
 
 if __name__ == '__main__':
