@@ -34,3 +34,6 @@ def register_model(cls=None, *, name=None):
         return _register
     else:
         return _register(cls)
+
+def get_model(name):
+    return _MODELS[name]

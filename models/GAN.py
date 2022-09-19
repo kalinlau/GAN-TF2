@@ -22,6 +22,7 @@ from tensorflow import keras
 from utils import register_model
 
 class G(keras.layers.Layer):
+    """Generator"""
     def __init__(self):
         pass
 
@@ -37,6 +38,16 @@ class D(keras.layers.Layer):
         return
 
 @register_model()
-class GAN(keras.Model):
+class GAN_H(keras.Model):
+    """Vanilla GAN implemented with Keras API"""
     def __init__(self) -> None:
         super().__init__()
+
+    def build(self):
+        pass
+
+    def call(self):
+        pass
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}()'
