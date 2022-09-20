@@ -5,5 +5,6 @@
 This project implements GANs and its variants on MNIST.
 
 ## DONE
+- [x] GANs
 
 ## TODO

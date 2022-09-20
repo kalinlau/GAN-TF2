@@ -16,10 +16,9 @@
 
 """ Implement various GANs on MNIST with TF2.0 """
 
-from concurrent.futures.thread import _worker
+import inspect
 import os
 import sys
-from syslog import LOG_WARNING
 
 from absl import app, flags, logging
 import tensorflow as tf
@@ -81,7 +80,7 @@ def main(argv):
     else:
         logging.set_verbosity(logging.DEBUG)
 
-    with tf.io.gfile.GFile(workdir + '/logs', 'w') as gf:
+    with tf.io.gfile.GFile(os.path.join(workdir, 'logs'), 'w') as gf:
         absl_handler = logging.get_absl_handler()
         absl_handler.python_handler.stream = gf
         logging.info(' '.join(sys.argv))
@@ -90,8 +89,23 @@ def main(argv):
     (ds_train, ds_test) = get_mnist()
 
     # Model Compilation
-    model = get_model(FLAGS.model)
-    logging.debug(f'{model}')
+    model = get_model(FLAGS.model)(workdir)
+
+
+    if FLAGS.mode == 'train':
+        model.compile(
+            d_optim=tf.keras.optimizers.Adam(learning_rate=2e-4),
+            g_optim=tf.keras.optimizers.Adam(learning_rate=2e-4),
+            loss_fn=tf.keras.losses.BinaryCrossentropy(from_logits=False),
+        )
+
+        model.fit(
+            ds_train,
+            epochs=10,
+            callbacks=model.callbacks,
+        )
+    else:
+        logging.debug('Not Implemented yet.')
 
 
 if __name__ == '__main__':

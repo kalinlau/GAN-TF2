@@ -15,12 +15,14 @@
 # =============================================================================
 
 """ Vanilla GANs """
+import os
 
+from absl import logging
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from utils import register_model
+from .utils import register_model, save_image
 
 class Generator(keras.layers.Layer):
     """Generator
@@ -38,9 +40,9 @@ class Generator(keras.layers.Layer):
         self.dc1 = layers.Conv2DTranspose(64, 4, (2, 2), padding='same', name='dc1')
         self.dc2 = layers.Conv2DTranspose(1, 4, (2, 2), padding='same', name='dc1')
 
-    def call(self, u, training=None):
-        x = self.relu(self.bn1(self.fc1(u), training=training))
-        x = self.relu(self.bn2(self.fc2(x), training=training))
+    def call(self, u):
+        x = self.relu(self.bn1(self.fc1(u)))
+        x = self.relu(self.bn2(self.fc2(x)))
         x = layers.Reshape((7, 7, 128))(x)
         x = self.relu(self.bn3(self.dc1(x)))
         x = self.dc2(x)
@@ -55,18 +57,21 @@ class Discriminator(keras.layers.Layer):
     """
     def __init__(self, name='discriminator', inputs_shape=(28, 28, 1), **kwargs):
         super(Discriminator, self).__init__(name=name, **kwargs)
-        self.conv_1 = layers.Conv2D(64, 4, strides=(2, 2), input_shape=inputs_shape, padding='same', name='conv1')
-        self.conv_2 = layers.Conv2D(128, 4, strides=(2, 2), padding='same', name='conv2')
-        self.bn = layers.BatchNormalization()
-        self.lrelu = layers.LeakyReLU(alpha=0.2)
+        self.conv_1 = layers.Conv2D(64, 4, strides=(2, 2), \
+            input_shape=inputs_shape, padding='same', name='conv1')
+        self.conv_2 = layers.Conv2D(128, 4, strides=(2, 2), \
+            padding='same', name='conv2')
+        self.bn1 = layers.BatchNormalization(name='bn1')
+        self.bn2 = layers.BatchNormalization(name='bn2')
+        self.lrelu = layers.LeakyReLU(alpha=0.1)
         self.fc_1 = layers.Dense(1024)
         self.fc_2 = layers.Dense(1)
 
-    def call(self, inputs, training=None):
+    def call(self, inputs):
         x = self.lrelu(self.conv_1(inputs))
-        x = self.lrelu(self.bn(self.conv_2(x), training=training))
+        x = self.lrelu(self.bn1(self.conv_2(x)))
         x = layers.Flatten()(x)
-        x = self.lrelu(self.bn(self.fc_1(x), training=training))
+        x = self.lrelu(self.bn2(self.fc_1(x)))
         x = self.fc_2(x)
 
         return keras.activations.sigmoid(x)
@@ -74,37 +79,89 @@ class Discriminator(keras.layers.Layer):
 @register_model(name='gan_h')
 class GAN_H(keras.Model):
     """Vanilla GAN implemented with Keras API"""
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, workdir, latent_dim=74):
+        super(GAN_H, self).__init__()
+        self.discriminator = Discriminator()
+        self.generator = Generator(inputs_shape=(latent_dim,))
+        self.latent_dim = latent_dim
+        self.callbacks = [
+            SaveImageEpochEnd(workdir, latent_dim=74),
+        ]
 
-    def build(self):
-        pass
+    def compile(self, d_optim, g_optim, loss_fn):
+        super(GAN_H, self).compile()
+        self.d_optimizer = d_optim
+        self.g_optimizer = g_optim
+        self.loss_fn = loss_fn
 
-    def call(self):
-        pass
+    def train_step(self, imgs):
+        """Forward / Backward pass in one batch.
+
+        Called by keras.Model.fit() automatically.
+        """
+        # Sample latent space to get noise
+        batch_size = tf.shape(imgs)[0]
+        z = tf.random.normal((batch_size, self.latent_dim))
+
+        # Generate fake images
+        fake_imgs = self.generator(z)
+
+        # Generate input to discriminator
+        pair_imgs = tf.concat([imgs, fake_imgs], axis=0)
+        labels = tf.concat(
+            [tf.ones((batch_size, 1)), tf.zeros((batch_size, 1))], axis=0
+        )
+
+        # Add noise term to label. IMPORTANT TRICK
+        # labels += 0.05 * tf.random.uniform(tf.shape(labels))
+
+        # Compute backprop of discriminator
+        with tf.GradientTape() as tape:
+            label_p = self.discriminator(pair_imgs)
+            d_loss = self.loss_fn(labels, label_p)
+
+        d_grad = tape.gradient(d_loss, self.discriminator.trainable_weights)
+        self.d_optimizer.apply_gradients(
+            zip(d_grad, self.discriminator.trainable_weights)
+        )
+
+        # Compute backprop of generator
+        mis_z = tf.random.normal((batch_size, self.latent_dim))
+        mis_labels = tf.zeros(shape=(batch_size, 1))
+
+        with tf.GradientTape() as tape:
+            label_p = self.discriminator(self.generator(mis_z))
+            g_loss = self.loss_fn(mis_labels, label_p)
+        grads = tape.gradient(g_loss, self.generator.trainable_weights)
+        self.g_optimizer.apply_gradients(
+            zip(grads, self.generator.trainable_weights)
+        )
+
+        return {'d_loss': d_loss, 'g_loss': g_loss}
+
+    def test_step(self, inputs):
+        return super(GAN_H, self).test_step(self, inputs)
 
     def __repr__(self):
         return f'{self.__class__.__name__}()'
 
 
+class SaveImageEpochEnd(keras.callbacks.Callback):
+    def __init__(self, workdir, num_img=10, latent_dim=74):
+        self.num_img = num_img
+        self.latent_dim = latent_dim
+        self.workdir = workdir
+
+    def on_epoch_end(self, epoch, logs=None):
+        z = tf.random.normal(shape=(self.num_img, self.latent_dim))
+        g_image = self.model.generator(z)
+
+        save_image(
+            g_image.numpy(),
+            os.path.join(self.workdir, f'epoch-{epoch}.png')
+        )
+
+
+
 if __name__ == '__main__':
-    from absl import logging
-    logging.set_verbosity(logging.DEBUG)
-    inputs = keras.Input((128, ))
-    x = layers.Dense(1024)(inputs)
-    x = layers.BatchNormalization()(x)
-    x = keras.activations.relu(x)
-    x = layers.Dense(128 * 7 * 7)(inputs)
-    x = layers.BatchNormalization()(x)
-    x = keras.activations.relu(x)
-    x = layers.Reshape((7, 7, 128))(x)
-    x = layers.Conv2DTranspose(64, 4, (2, 2), padding='same')(x)
-    x = layers.BatchNormalization()(x)
-    x = keras.activations.relu(x)
-    x = layers.Conv2DTranspose(1, 4, (2, 2), padding='same')(x)
-    x = keras.activations.sigmoid(x)
-
-    model = keras.Model(inputs, x)
-
-    res = Generator()(tf.ones((64, 128)))
-    logging.debug(res.shape)
+    pass

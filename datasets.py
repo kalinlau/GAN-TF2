@@ -23,9 +23,19 @@ from tensorflow_datasets.core.utils import gcs_utils
 gcs_utils._is_gcs_disabled = True
 
 def get_mnist(batch_size=64):
-    def normalize(img, label):
-        """Normalization"""
-        return tf.cast(img, tf.float32) / 255.0, label
+    def norm_and_remove(img, label):
+        """Normalize and remove labels
+
+        Normalize pixel into [0, 1), and remove labels since generative model
+        doesn't need it.
+
+        Note:
+            input signature of map_func is determined by the structure of each
+            element in this dataset. Check:
+
+            https://www.tensorflow.org/api_docs/python/tf/data/Dataset?hl=en#map
+        """
+        return tf.cast(img, tf.float32) / 255.0
 
     (ds_train, ds_test), ds_info = tfds.load(
         'mnist',
@@ -37,13 +47,13 @@ def get_mnist(batch_size=64):
         try_gcs=False,
     )
 
-    ds_train = ds_train.map(normalize, num_parallel_calls=tf.data.AUTOTUNE)
+    ds_train = ds_train.map(norm_and_remove, num_parallel_calls=tf.data.AUTOTUNE)
     ds_train = ds_train.cache()
     ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
     ds_train = ds_train.batch(batch_size)
     ds_train = ds_train.prefetch(tf.data.AUTOTUNE)
 
-    ds_test = ds_test.map(normalize, num_parallel_calls=tf.data.AUTOTUNE)
+    ds_test = ds_test.map(norm_and_remove, num_parallel_calls=tf.data.AUTOTUNE)
     ds_test = ds_test.cache()
     ds_test = ds_test.batch(batch_size)
     ds_test = ds_test.prefetch(tf.data.AUTOTUNE)
@@ -55,6 +65,4 @@ if __name__ == '__main__':
     # gcs_utils.gcs_dataset_info_files = lambda *args, **kwargs: None
     # gcs_utils.is_dataset_on_gcs = lambda *args, **kwargs: False
 
-
-    # tfds.load('cifar10')
-    tfds.load('mnist', data_dir='./data', try_gcs=False)
+    (ds_train, ds_test) = get_mnist()
