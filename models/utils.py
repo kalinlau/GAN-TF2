@@ -43,7 +43,7 @@ def get_model(name):
     return _MODELS[name]
 
 # https://github.com/yang-song/score_sde/blob/main/utils.py#L51
-def save_image(ndarray, fp, nrow=8, padding=2, pad_value=0.0, format=None):
+def save_image(ndarray, fp, nrow=8, padding=2, pad_value=0.3, format=None):
     """Make a grid of images and save it into an image file.
 
     Pixel values are assumed to be within [0, 1].
@@ -55,7 +55,7 @@ def save_image(ndarray, fp, nrow=8, padding=2, pad_value=0.0, format=None):
             The final grid size is ``(B / nrow, nrow)``. Default: ``8``.
         padding (int, optional): amount of padding. Default: ``2``.
         pad_value (float, optional): Value for the padded pixels. Default: ``0``.
-            format(Optional):  If omitted, the format to use is determined from the
+        format(Optional):  If omitted, the format to use is determined from the
             filename extension. If a file object was used instead of a filename,
             this parameter should always be used.
     """

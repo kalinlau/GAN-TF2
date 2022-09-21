@@ -16,9 +16,9 @@
 
 """ Implement various GANs on MNIST with TF2.0 """
 
-import inspect
 import os
 import sys
+from datetime import datetime
 
 from absl import app, flags, logging
 import tensorflow as tf
@@ -65,7 +65,10 @@ def main(argv):
     os.environ['NO_GCE_CHECK'] = 'true'
     tf.config.experimental.set_visible_devices([], 'GPU')
 
-    workdir = os.path.join('exps', FLAGS.model)
+    timeshift = datetime.today().strftime('%Y%m%d%H%M%S')
+    workdir = f'{FLAGS.model}-{timeshift}'
+
+    workdir = os.path.join('exps', workdir)
 
     tf.io.gfile.makedirs(workdir)
 
@@ -86,22 +89,21 @@ def main(argv):
         logging.info(' '.join(sys.argv))
 
     # Data
-    (ds_train, ds_test) = get_mnist()
+    (ds_train, ds_test) = get_mnist(FLAGS.batch_size)
 
     # Model Compilation
     model = get_model(FLAGS.model)(workdir)
 
-
     if FLAGS.mode == 'train':
         model.compile(
-            d_optim=tf.keras.optimizers.Adam(learning_rate=2e-4),
-            g_optim=tf.keras.optimizers.Adam(learning_rate=2e-4),
-            loss_fn=tf.keras.losses.BinaryCrossentropy(from_logits=False),
+            d_optim=tf.keras.optimizers.Adam(learning_rate=1e-4),
+            g_optim=tf.keras.optimizers.Adam(learning_rate=1e-4),
+            loss_fn=tf.keras.losses.BinaryCrossentropy(),
         )
 
         model.fit(
-            ds_train,
-            epochs=10,
+            ds_train.take(100),
+            epochs=20,
             callbacks=model.callbacks,
         )
     else:
