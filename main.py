@@ -32,9 +32,9 @@ FLAGS.alsologtostderr = True
 
 flags.DEFINE_enum(
     name='model',
-    default='gan_h',
+    default='GAN',
     enum_values=list(_MODELS.keys()),
-    help='select models to use (default: gan_h).')
+    help='select models to use (default: GAN).')
 
 flags.DEFINE_enum(
     name='mode',
@@ -47,6 +47,13 @@ flags.DEFINE_integer(
     default=64,
     lower_bound=4,
     help='Batch size to use (default: 64).'
+)
+
+flags.DEFINE_integer(
+    name='epoch',
+    default=50,
+    lower_bound=2,
+    help='Epochs to train the net.'
 )
 
 flags.DEFINE_enum(
@@ -63,9 +70,9 @@ def main(argv):
 
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
     os.environ['NO_GCE_CHECK'] = 'true'
-    tf.config.experimental.set_visible_devices([], 'GPU')
 
-    timeshift = datetime.today().strftime('%Y%m%d%H%M%S')
+
+    timeshift = datetime.today().strftime('%Y%m%d-%H:%M:%S')
     workdir = f'{FLAGS.model}-{timeshift}'
 
     workdir = os.path.join('exps', workdir)
@@ -98,12 +105,12 @@ def main(argv):
         model.compile(
             d_optim=tf.keras.optimizers.Adam(learning_rate=1e-4),
             g_optim=tf.keras.optimizers.Adam(learning_rate=1e-4),
-            loss_fn=tf.keras.losses.BinaryCrossentropy(),
+            loss_fn=tf.keras.losses.BinaryCrossentropy(from_logits=True),
         )
 
         model.fit(
-            ds_train.take(100),
-            epochs=20,
+            ds_train,
+            epochs=FLAGS.epoch,
             callbacks=model.callbacks,
         )
     else:
