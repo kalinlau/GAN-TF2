@@ -148,6 +148,12 @@ class SaveImageEpochEnd(keras.callbacks.Callback):
         )
 
 class SaveModelWeights(keras.callbacks.Callback):
+    """Save model weights during training.
+
+    Since there is no way currently to use Model.save() in TF2.9, save
+    the weights instead. That's also the suggestion from
+    https://stackoverflow.com/q/51806852/8069158
+    """
     def __init__(self, ckptdir):
         self.ckptdir = ckptdir.rstrip('/')
 
@@ -155,8 +161,3 @@ class SaveModelWeights(keras.callbacks.Callback):
         self.model.save_weights(
             f'{self.ckptdir}/epoch-{epoch}'
         )
-
-
-
-if __name__ == '__main__':
-    pass
