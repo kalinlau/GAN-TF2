@@ -14,7 +14,8 @@
 # limitations under the License.
 # =============================================================================
 
-""" Vanilla GANs """
+""" Vanilla GANs: High-Level API """
+
 import os
 import sys
 
@@ -27,10 +28,10 @@ from .utils import register_model, save_image
 
 
 @register_model()
-class GAN(keras.Model):
+class GAN_H(keras.Model):
     """Vanilla GAN implemented with Keras API"""
-    def __init__(self, workdir, latent_dim=62):
-        super(GAN, self).__init__()
+    def __init__(self, imgdir='./exps', logdir='./exps', ckptdir='./exps', latent_dim=62, **kwargs):
+        super(GAN_H, self).__init__(**kwargs)
         # Generator
         # Same architecture with infoGAN (https://arxiv.org/abs/1606.03657)
         # Architecture : FC1024_Bn-FC7x7x128_Bn-(64)4dc2s_Bn-(1)4dc2s_Sigmoid
@@ -38,14 +39,14 @@ class GAN(keras.Model):
             [
                 keras.Input(shape=(latent_dim, )),
                 layers.Dense(1024),
-                layers.BatchNormalization(),
+                layers.BatchNormalization(epsilon=1e-5,),
                 layers.ReLU(),
                 layers.Dense(7 * 7 * 128),
-                layers.BatchNormalization(),
+                layers.BatchNormalization(epsilon=1e-5,),
                 layers.ReLU(),
                 layers.Reshape((7, 7, 128)),
                 layers.Conv2DTranspose(64, (4, 4), (2, 2), padding='same'),
-                layers.BatchNormalization(),
+                layers.BatchNormalization(epsilon=1e-5,),
                 layers.ReLU(),
                 layers.Conv2DTranspose(1, 4, 2, padding='same', activation='sigmoid'),
             ],
@@ -59,35 +60,36 @@ class GAN(keras.Model):
             [
                 keras.Input(shape=(28, 28, 1)),
                 layers.Conv2D(64, 4, 2, padding='same', name='d_conv1'),
-                layers.LeakyReLU(),
+                layers.LeakyReLU(alpha=0.2),
                 layers.Conv2D(128, 4, 2, padding='same', name='d_conv2'),
-                layers.BatchNormalization(name='d_bn2'),
-                layers.LeakyReLU(),
+                layers.BatchNormalization(epsilon=1e-5, name='d_bn2'),
+                layers.LeakyReLU(alpha=0.2),
                 layers.Flatten(),
                 layers.Dense(1024, name='d_fc3'),
-                layers.BatchNormalization(name='d_bn3'),
-                layers.LeakyReLU(),
+                layers.BatchNormalization(epsilon=1e-5, name='d_bn3'),
+                layers.LeakyReLU(alpha=0.2),
                 layers.Dense(1, name='d_fc4', activation='sigmoid'),
             ],
             name='discriminator',
         )
         self.latent_dim = latent_dim
         self.callbacks = [
-            SaveImageEpochEnd(workdir, num_img=64, latent_dim=self.latent_dim),
+            SaveImageEpochEnd(imgdir, num_img=64, latent_dim=self.latent_dim),
+            SaveModelWeights(ckptdir),
+            keras.callbacks.TensorBoard(log_dir=logdir),
         ]
 
     def compile(self, d_optim, g_optim, loss_fn):
-        super(GAN, self).compile()
+        super(GAN_H, self).compile()
         self.d_optimizer = d_optim
         self.g_optimizer = g_optim
         self.loss_fn = loss_fn
         self.d_loss_metric = keras.metrics.Mean(name='d_loss')
-        self.g_loss_metric = keras.metrics.Mean(name='g_loss')
 
     @property
     def metrics(self):
         """Metrics update by model.fit()."""
-        return [self.d_loss_metric, self.g_loss_metric]
+        return [self.d_loss_metric]
 
     def train_step(self, imgs):
         """One forward / backward training step.
@@ -103,6 +105,7 @@ class GAN(keras.Model):
 
             d_real = self.discriminator(imgs, training=True)
             d_fake = self.discriminator(g_imgs, training=True)
+            # g_imgs, d_fake, d_real = GAN.__call__((noise, imgs))
 
             g_loss = self.loss_fn(tf.ones_like(d_fake), d_fake)
             d_real_loss = self.loss_fn(tf.ones_like(d_real), d_real)
@@ -119,12 +122,8 @@ class GAN(keras.Model):
         )
 
         self.d_loss_metric.update_state(d_loss)
-        self.g_loss_metric.update_state(g_loss)
 
-        return {
-            'd_loss': self.d_loss_metric.result(),
-            'g_loss': self.g_loss_metric.result(),
-        }
+        return {'d_loss': self.d_loss_metric.result()}
 
     def test_step(self, inputs):
         return super(GAN_H, self).test_step(self, inputs)
@@ -146,6 +145,15 @@ class SaveImageEpochEnd(keras.callbacks.Callback):
         save_image(
             g_image.numpy(),
             os.path.join(self.workdir, f'epoch-{epoch}.png')
+        )
+
+class SaveModelWeights(keras.callbacks.Callback):
+    def __init__(self, ckptdir):
+        self.ckptdir = ckptdir.rstrip('/')
+
+    def on_epoch_end(self, epoch, logs=None):
+        self.model.save_weights(
+            f'{self.ckptdir}/epoch-{epoch}'
         )
 
 

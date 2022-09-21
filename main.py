@@ -24,7 +24,7 @@ from absl import app, flags, logging
 import tensorflow as tf
 
 from models.utils import _MODELS, get_model
-from models import GAN
+from models import GAN_H
 from datasets import get_mnist
 
 FLAGS = flags.FLAGS
@@ -32,9 +32,9 @@ FLAGS.alsologtostderr = True
 
 flags.DEFINE_enum(
     name='model',
-    default='GAN',
+    default='GAN_H',
     enum_values=list(_MODELS.keys()),
-    help='select models to use (default: GAN).')
+    help='select models to use (default: GAN_H).')
 
 flags.DEFINE_enum(
     name='mode',
@@ -51,16 +51,9 @@ flags.DEFINE_integer(
 
 flags.DEFINE_integer(
     name='epoch',
-    default=50,
-    lower_bound=2,
+    default=25,
+    lower_bound=1,
     help='Epochs to train the net.'
-)
-
-flags.DEFINE_enum(
-    name='verb',
-    default='debug',
-    enum_values=['debug', 'info', 'warn', 'error', 'fatal'],
-    help='Level of logging verbosity (default: debug).'
 )
 
 
@@ -71,26 +64,21 @@ def main(argv):
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
     os.environ['NO_GCE_CHECK'] = 'true'
 
-
     timeshift = datetime.today().strftime('%Y%m%d-%H:%M:%S')
     workdir = f'{FLAGS.model}-{timeshift}'
-
     workdir = os.path.join('exps', workdir)
 
-    tf.io.gfile.makedirs(workdir)
+    logdir = os.path.join(workdir, 'logs/')
+    imgdir = os.path.join(workdir, 'imgs/')
+    ckptdir = os.path.join(workdir, 'ckpts/')
 
-    if FLAGS.verb == 'info':
-        logging.set_verbosity(logging.INFO)
-    elif FLAGS.verb == 'warn':
-        logging.set_verbosity(logging.WARNING)
-    elif FLAGS.verb == 'error':
-        logging.set_verbosity(logging.ERROR)
-    elif FLAGS.verb == 'fatal':
-        logging.set_verbosity(logging.FATAL)
-    else:
-        logging.set_verbosity(logging.DEBUG)
+    tf.io.gfile.makedirs(logdir)
+    tf.io.gfile.makedirs(imgdir)
+    tf.io.gfile.makedirs(ckptdir)
 
-    with tf.io.gfile.GFile(os.path.join(workdir, 'logs'), 'w') as gf:
+    logging.set_verbosity(logging.DEBUG)
+
+    with tf.io.gfile.GFile(os.path.join(logdir, 'logging.txt'), 'w') as gf:
         absl_handler = logging.get_absl_handler()
         absl_handler.python_handler.stream = gf
         logging.info(' '.join(sys.argv))
@@ -99,13 +87,17 @@ def main(argv):
     (ds_train, ds_test) = get_mnist(FLAGS.batch_size)
 
     # Model Compilation
-    model = get_model(FLAGS.model)(workdir)
+    model = get_model(FLAGS.model)(
+        imgdir=imgdir,
+        logdir=logdir,
+        ckptdir=ckptdir,
+    )
 
     if FLAGS.mode == 'train':
         model.compile(
-            d_optim=tf.keras.optimizers.Adam(learning_rate=1e-4),
-            g_optim=tf.keras.optimizers.Adam(learning_rate=1e-4),
-            loss_fn=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+            d_optim=tf.keras.optimizers.Adam(learning_rate=1e-4, beta_1=0.5),
+            g_optim=tf.keras.optimizers.Adam(learning_rate=1e-4, beta_1=0.5),
+            loss_fn=tf.keras.losses.BinaryCrossentropy(from_logits=False),
         )
 
         model.fit(
@@ -113,6 +105,7 @@ def main(argv):
             epochs=FLAGS.epoch,
             callbacks=model.callbacks,
         )
+
     else:
         logging.debug('Not Implemented yet.')
 
